@@ -3,31 +3,30 @@ FROM golang:1.21-alpine AS builder
 # Install build dependencies
 RUN apk add --no-cache git build-base ca-certificates
 
-# Set working directory
-WORKDIR /app
+# Set working directory to GOPATH so GO111MODULE=off can find the vendor folder
+WORKDIR /go/src/github.com/mailhog/MailHog
 
-# Clone MailHog repository
-RUN git clone https://github.com/mailhog/MailHog.git .
+# Clone MailHog repository (pinned to v1.0.1 for deterministic builds)
+RUN git clone -b v1.0.1 --single-branch https://github.com/mailhog/MailHog.git .
 
 # Use ARG for architecture - this will be passed by Docker buildx
 ARG TARGETARCH
 ARG TARGETVARIANT
 
 # Build the application with proper architecture mapping
-RUN BUILD_ARCH=$TARGETARCH && \
-    if [ "$TARGETARCH" = "arm" ] && [ "$TARGETVARIANT" = "v8" ]; then \
-      BUILD_ARCH="arm64"; \
-    fi && \
-    echo "Building for architecture: $BUILD_ARCH" && \
+RUN echo "Building for architecture: $TARGETARCH" && \
     CGO_ENABLED=0 \
     GOOS=linux \
-    GOARCH=$BUILD_ARCH \
-    go build -o mailhog
+    GOARCH=$TARGETARCH \
+    GO111MODULE=off \
+    go build -o /app/mailhog
 
 FROM alpine:latest
 
-# Add runtime dependencies
-RUN apk add --no-cache ca-certificates
+# Add runtime dependencies and create a non-root user
+RUN apk add --no-cache ca-certificates && \
+    addgroup -g 1000 mailhog && \
+    adduser -u 1000 -G mailhog -s /bin/sh -D mailhog
 
 # Copy MailHog binary
 COPY --from=builder /app/mailhog /usr/local/bin/mailhog
@@ -39,5 +38,12 @@ LABEL org.opencontainers.image.description="Multi-platform Mailhog Docker Image"
 
 # Expose SMTP and HTTP ports
 EXPOSE 1025 8025
+
+# Switch to non-root user
+USER mailhog
+
+# Add healthcheck targeting the MailHog API
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget -q -O - http://localhost:8025/api/v2/messages > /dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/usr/local/bin/mailhog"]
