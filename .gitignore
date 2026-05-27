@@ -17,6 +17,3 @@ Thumbs.db
 mailhog
 mailhog.exe
 *.log
-
-# Docker
-.dockerignore

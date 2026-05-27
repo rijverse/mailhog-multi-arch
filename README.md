@@ -3,7 +3,7 @@
 <div align="center">
   <img src="https://img.shields.io/docker/pulls/rijoanul/mailhog?style=for-the-badge&logo=docker&color=2496ED" alt="Docker Pulls">
   <img src="https://img.shields.io/docker/image-size/rijoanul/mailhog/latest?style=for-the-badge&logo=docker&color=2496ED" alt="Docker Image Size">
-  <img src="https://img.shields.io/badge/architectures-amd64%20%7C%20arm64%20%7C%20armv8-blue?style=for-the-badge" alt="Supported Architectures">
+  <img src="https://img.shields.io/badge/architectures-amd64%20%7C%20arm64%20%7C%20armv7-blue?style=for-the-badge" alt="Supported Architectures">
 </div>
 
 ## Overview
@@ -20,6 +20,11 @@ This repository provides a multi-architecture Docker image for MailHog, an open-
 Pull the image from Docker Hub:
 ```bash
 docker pull rijoanul/mailhog:latest
+```
+
+Or from the GitHub Container Registry:
+```bash
+docker pull ghcr.io/rijoanul-shanto/mailhog:latest
 ```
 
 Run the container:
@@ -47,15 +52,18 @@ This image is a drop-in replacement for the standard MailHog image and is partic
 The image is built with modern container best practices in mind:
 - **Non-root execution**: The application runs as a dedicated `mailhog` user, not root.
 - **Healthchecks**: Includes a built-in Docker `HEALTHCHECK` that queries the MailHog API, making it safe for container orchestrators like Kubernetes or Docker Swarm.
-- **Reproducible builds**: The Dockerfile builds from a pinned MailHog release (v1.0.1) using Go's legacy GOPATH mode to guarantee consistent behavior despite MailHog's age.
+- **Reproducible builds**: The Dockerfile builds from a pinned MailHog release (v1.0.1) and pinned base images (`golang:1.21.13-alpine3.20`, `alpine:3.21`), using Go's legacy GOPATH mode to guarantee consistent behavior despite MailHog's age.
 - **Minimal footprint**: Based on Alpine Linux to keep the image lightweight and reduce the attack surface.
 
 ## Image Tags
 
+Images are tagged by this repository's own release version (e.g. `v0.1.2`); the bundled MailHog application is upstream **v1.0.1**.
+
 | Tag | Description |
 |-----|-------------|
-| `latest` | The most recent stable build |
-| `v1.0.0` | Specific version pinning |
+| `latest` | The most recent tagged release |
+| `vX.Y.Z` | A specific release (e.g. `v0.1.2`) |
+| `X.Y` | The latest patch within a minor series |
 
 ## Contributing
 

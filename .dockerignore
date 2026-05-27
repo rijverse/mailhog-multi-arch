@@ -1,0 +1,9 @@
+# The MailHog source is cloned inside the image, so the build context only
+# needs to stay small. Exclude everything not used by the build.
+.git
+.github
+.idea
+.vscode
+*.md
+LICENSE
+.gitignore
