@@ -184,7 +184,7 @@ jobs:
           echo "$TAGS" | awk -F: -v d="$DIGEST" 'NF{print $1"@"d}' | sort -u | while read -r ref; do
             echo "Signing $ref"
             cosign sign --yes "$ref"
-            cosign attest --yes --predicate sbom.spdx.json --type spdx "$ref"
+            cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$ref"
           done
 
       # Pull the section for this version out of CHANGELOG.md so the GitHub
