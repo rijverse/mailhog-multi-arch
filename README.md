@@ -29,7 +29,7 @@ Send mail to `localhost:1025`, read it at `http://localhost:8025`.
 |---|---|
 | Registries | `rijoanul/mailhog`, `ghcr.io/rijverse/mailhog` |
 | Platforms | `linux/amd64`, `linux/arm64`, `linux/arm/v7` |
-| Base | `alpine:3.21`, runs as `mailhog` (UID 1000) |
+| Base | `alpine:3.23`, runs as `mailhog` (UID 1000) |
 | MailHog | `v1.0.1` (pinned) |
 
 `HEALTHCHECK` is built in, so Compose, Swarm, and Kubernetes can tell when it's ready.
