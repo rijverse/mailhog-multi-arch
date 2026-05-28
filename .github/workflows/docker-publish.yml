@@ -4,41 +4,127 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:  # Allow manual triggering
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/docker-publish.yml"
+  workflow_dispatch:
 
 # Don't let two release builds race on the `latest` tag.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+# Default: read-only. The publish job opts into the writes it needs.
+permissions:
+  contents: read
+
 jobs:
-  docker-build-and-push:
+  # Build a single-arch image per target and verify the binary actually runs.
+  # Non-amd64 archs run under QEMU here. Slow, but it catches arch-mapping
+  # mistakes (we've shipped those) before they reach a release tag. Layer
+  # cache is shared with the publish job.
+  smoke-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+          - linux/arm/v7
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.platform }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: mailhog:smoke
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Verify API + SMTP round-trip
+        run: |
+          docker run -d --name mh -p 8025:8025 -p 1025:1025 mailhog:smoke
+
+          # Wait for the API to respond. Generous loop because non-amd64 runs
+          # under QEMU and can take noticeably longer to boot.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8025/api/v2/messages >/dev/null; then
+              break
+            fi
+            sleep 1
+            if [ "$i" = "30" ]; then
+              echo "MailHog never became reachable on ${{ matrix.platform }}."
+              docker logs mh
+              exit 1
+            fi
+          done
+
+          # Send a mail via SMTP and confirm it lands in the store. This is
+          # the real value test: catches a binary that boots and serves the
+          # UI but has a broken SMTP listener.
+          python3 - <<'PY'
+          import smtplib
+          from email.message import EmailMessage
+          msg = EmailMessage()
+          msg["Subject"] = "smoke"
+          msg["From"] = "ci@example.com"
+          msg["To"] = "inbox@example.com"
+          msg.set_content("hello")
+          with smtplib.SMTP("localhost", 1025) as s:
+              s.send_message(msg)
+          PY
+
+          total=$(curl -fsS http://localhost:8025/api/v2/messages | python3 -c 'import sys,json;print(json.load(sys.stdin)["total"])')
+          if [ "$total" != "1" ]; then
+            echo "SMTP round-trip failed on ${{ matrix.platform }}: expected 1 stored message, got $total"
+            docker logs mh
+            exit 1
+          fi
+          echo "SMTP round-trip OK on ${{ matrix.platform }}."
+          docker rm -f mh
+
+      # Scan only on amd64. Base layers are identical across arches, so
+      # scanning all three would just triple the CI time.
+      - name: Scan image for CVEs
+        if: matrix.platform == 'linux/amd64'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: mailhog:smoke
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          # Report only. Don't fail the build on a fresh CVE that has no fix yet.
+          exit-code: "0"
+
+  publish:
+    needs: smoke-test
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
-
+      id-token: write # cosign keyless signing via GitHub OIDC
     steps:
-      # Checkout repository
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Setup QEMU for multi-arch builds
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: sigstore/cosign-installer@v3
 
-      # Setup Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Login to Docker Hub
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Login to GitHub Container Registry
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -46,7 +132,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata for Docker image
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -57,26 +142,52 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=latest
 
-      # Build and push Docker image
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha,scope=linux/amd64
+            type=gha,scope=linux/arm64
+            type=gha,scope=linux/arm/v7
+          cache-to: type=gha,mode=max,scope=publish
           # Keep registry tag listings clean (no `unknown/unknown` attestation rows).
+          # SBOM/signature are attached out-of-band via cosign below, which uses
+          # the cleaner `sha256-*.sig` / `.sbom` tag convention.
           provenance: false
 
-      # GitHub Release
-      - name: Create Release
+      # Generate an SBOM once (Go binary is statically linked, so per-arch
+      # output would be near-identical), then sign+attest each pushed image
+      # by digest. Iterating tags and deduping by repo keeps us from re-signing
+      # the same digest in the same registry multiple times.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/mailhog@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Sign images and attach SBOM
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          echo "$TAGS" | awk -F: -v d="$DIGEST" 'NF{print $1"@"d}' | sort -u | while read -r ref; do
+            echo "Signing $ref"
+            cosign sign --yes "$ref"
+            cosign attest --yes --predicate sbom.spdx.json --type spdx "$ref"
+          done
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           generate_release_notes: true

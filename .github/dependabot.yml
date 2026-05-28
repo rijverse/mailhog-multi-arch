@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Bumps for base images in the Dockerfile (golang, alpine).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Bumps for the actions used in our workflow.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

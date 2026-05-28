@@ -1,78 +1,49 @@
-# MailHog Multi-Architecture Docker Image
+# MailHog Multi-Arch Docker Image
 
-<div align="center">
-  <img src="https://img.shields.io/docker/pulls/rijoanul/mailhog?style=for-the-badge&logo=docker&color=2496ED" alt="Docker Pulls">
-  <img src="https://img.shields.io/docker/image-size/rijoanul/mailhog/latest?style=for-the-badge&logo=docker&color=2496ED" alt="Docker Image Size">
-  <img src="https://img.shields.io/badge/architectures-amd64%20%7C%20arm64%20%7C%20armv7-blue?style=for-the-badge" alt="Supported Architectures">
-</div>
+![Docker Pulls](https://img.shields.io/docker/pulls/rijoanul/mailhog?logo=docker)
+![Image Size](https://img.shields.io/docker/image-size/rijoanul/mailhog/latest?logo=docker)
+![Build](https://github.com/rijverse/mailhog-multi-arch/actions/workflows/docker-publish.yml/badge.svg)
 
-## Overview
+Multi-arch Docker image for [MailHog](https://github.com/mailhog/MailHog), the dev SMTP server with a web UI. Adds `arm64` and `armv7` alongside the original `amd64`, since upstream stopped shipping in 2020.
 
-This repository provides a multi-architecture Docker image for MailHog, an open-source email testing tool for developers. It's built to run natively across different hardware platforms without emulation overhead.
+## Run
 
-### Supported Architectures
-- `linux/amd64` (x86_64)
-- `linux/arm64` (64-bit ARM)
-- `linux/arm/v7` (32-bit ARM)
-
-## Quick Start
-
-Pull the image from Docker Hub:
 ```bash
-docker pull rijoanul/mailhog:latest
+docker run -d -p 1025:1025 -p 8025:8025 rijoanul/mailhog
 ```
 
-Or from the GitHub Container Registry:
-```bash
-docker pull ghcr.io/rijoanul-shanto/mailhog:latest
+Or with Compose:
+
+```yaml
+services:
+  mailhog:
+    image: rijoanul/mailhog
+    ports: ["1025:1025", "8025:8025"]
 ```
 
-Run the container:
-```bash
-docker run -d \
-  --name mailhog \
-  -p 1025:1025 \
-  -p 8025:8025 \
-  rijoanul/mailhog:latest
-```
+Send mail to `localhost:1025`, read it at `http://localhost:8025`.
 
-### Ports
-- **1025**: SMTP Server (use this to send emails from your application)
-- **8025**: Web UI (use this to view captured emails in your browser)
+## Image
 
-## Usage
+|  |  |
+|---|---|
+| Registries | `rijoanul/mailhog`, `ghcr.io/rijverse/mailhog` |
+| Platforms | `linux/amd64`, `linux/arm64`, `linux/arm/v7` |
+| Base | `alpine:3.21`, runs as `mailhog` (UID 1000) |
+| MailHog | `v1.0.1` (pinned) |
 
-This image is a drop-in replacement for the standard MailHog image and is particularly useful for:
-- Local development on Apple Silicon (M1/M2/M3) Macs or ARM-based Linux machines.
-- Standardizing email testing in CI/CD pipelines across mixed hardware environments.
-- Debugging email routing and formatting without relying on external SMTP providers.
+`HEALTHCHECK` is built in, so Compose, Swarm, and Kubernetes can tell when it's ready.
 
-## Security & Reliability
+## Tags
 
-The image is built with modern container best practices in mind:
-- **Non-root execution**: The application runs as a dedicated `mailhog` user, not root.
-- **Healthchecks**: Includes a built-in Docker `HEALTHCHECK` that queries the MailHog API, making it safe for container orchestrators like Kubernetes or Docker Swarm.
-- **Reproducible builds**: The Dockerfile builds from a pinned MailHog release (v1.0.1) and pinned base images (`golang:1.21.13-alpine3.20`, `alpine:3.21`), using Go's legacy GOPATH mode to guarantee consistent behavior despite MailHog's age.
-- **Minimal footprint**: Based on Alpine Linux to keep the image lightweight and reduce the attack surface.
+| Tag | Points to |
+|---|---|
+| `latest` | newest release |
+| `X.Y.Z` | a specific release |
+| `X.Y` | latest patch on that minor line |
 
-## Image Tags
-
-Images are tagged by this repository's own release version (e.g. `v0.1.2`); the bundled MailHog application is upstream **v1.0.1**.
-
-| Tag | Description |
-|-----|-------------|
-| `latest` | The most recent tagged release |
-| `vX.Y.Z` | A specific release (e.g. `v0.1.2`) |
-| `X.Y` | The latest patch within a minor series |
-
-## Contributing
-
-Pull requests and issues are welcome. Feel free to open a ticket if you run into any problems or have suggestions for improvements.
+Image versions track this repo's releases, not MailHog's.
 
 ## License
 
-Distributed under the MIT License.
-
-## Connect
-
-[@rijoanul](https://github.com/Rijoanul-Shanto)
+MIT.
