@@ -1,6 +1,6 @@
 # Build the builder natively on the host platform and cross-compile to the
 # target arch. This avoids running the whole toolchain under QEMU emulation.
-FROM --platform=$BUILDPLATFORM golang:1.21.13-alpine3.20 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.24.3-alpine3.20 AS builder
 
 # Pinned MailHog release. The single source of truth for what the image bundles.
 ARG MAILHOG_VERSION=v1.0.1
