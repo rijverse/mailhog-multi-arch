@@ -187,7 +187,31 @@ jobs:
             cosign attest --yes --predicate sbom.spdx.json --type spdx "$ref"
           done
 
+      # Pull the section for this version out of CHANGELOG.md so the GitHub
+      # release shows curated notes. If there's no matching section, we fall
+      # back to auto-generated commit-based notes below.
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          : > release-notes.md
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\[" ver "\\]" { found=1; next }
+              found && /^## / { exit }
+              found { print }
+            ' CHANGELOG.md > release-notes.md
+          fi
+          if [ -s release-notes.md ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Using CHANGELOG section for $VERSION."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No CHANGELOG section for $VERSION; falling back to auto-generated notes."
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release-notes.md
+          generate_release_notes: ${{ steps.notes.outputs.found != 'true' }}
