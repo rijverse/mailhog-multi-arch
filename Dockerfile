@@ -26,7 +26,7 @@ RUN CGO_ENABLED=0 \
     GO111MODULE=off \
     go build -trimpath -ldflags='-s -w' -o /app/mailhog
 
-FROM alpine:3.23
+FROM alpine:3.24
 
 # Runtime CA certs + a dedicated non-root user.
 RUN apk add --no-cache ca-certificates && \
